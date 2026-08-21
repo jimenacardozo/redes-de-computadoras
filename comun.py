@@ -46,6 +46,9 @@ MSG_MEASUREMENTS = "MEASUREMENTS"
 MSG_ERROR = "ERROR"
 MSG_END = "END"
 
+# Clave secreta
+CLAVE_SECRETA = "redes2026grupo21"
+
 
 # =========================================================================
 # Framing TCP: los mensajes terminan en \n. TCP es un stream de bytes, NO
