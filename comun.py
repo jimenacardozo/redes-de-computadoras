@@ -35,10 +35,7 @@ MSG_END = "END"
 
 # Clave secreta
 CLAVE_SECRETA = "redes2026grupo21"
-
-def send_msg(sock: socket.socket, texto: str) -> None:
-    """Envía un mensaje de protocolo, agregando el terminador '\n'."""
-    sock.sendall((texto + "\n").encode("utf-8"))
+CLAVE = "redes2026grupo21"
 
 
 class LineReader:
