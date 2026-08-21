@@ -47,15 +47,20 @@ def conexion_tcp(conn, addr):
 
             # puede haber 0, 1 o varios mensajes completos en el buffer
             while "\n" in buffer:
+                print('entra al while')
                 linea, buffer = buffer.split("\n", 1)  # separa el primer mensaje del resto
                 mensaje = linea.strip()
+                print('pasa el strip')
+                print(f"{mensaje}")
                 if mensaje == "":
+                    print('mensaje vacio')
                     continue
 
                 partes = mensaje.split(" ", 1) # Divido con el primer espacio que encuentre en un maximo de 2 partes
                 comando = partes[0] # Me quedo con REGISTER/METRIC/END
-
+                print(f"{comando}")
                 if comando == MSG_REGISTER:
+                    print('entra a msg_register')
                     if len(partes) < 2: # Puede venir un REGISTER sin nada, manejamos eso
                         conn.sendall(b"ERROR\n")
                         continue
@@ -63,10 +68,12 @@ def conexion_tcp(conn, addr):
                     clave = partes[1]
                     if clave != CLAVE_SECRETA:
                         conn.sendall(b"ERROR\n")
+                        print('clave incorrecta')
                         continue
 
                     # Lock asegura que solo un hilo a la vez puede ejecutar el codigo de adentro
                     with lock:
+                        print('entra al lock')
                         id_agente = siguiente_id
                         siguiente_id += 1  # sin 'global' arriba, esto tiraria UnboundLocalError
                         agentes[id_agente] = {
@@ -75,9 +82,6 @@ def conexion_tcp(conn, addr):
                             "cpu": deque(maxlen=10),
                             "mem": deque(maxlen=10),
                         }
-                        # deque sirve para manejar colas, crea una deque que nunca puede tener 
-                        # mas de 10 elementos (maxlen=10). Cuando ya tiene 10 y agregas uno mas con .append(), 
-                        # automaticamente se descarta el mas viejo (el del otro extremo) para hacerle lugar al nuevo.
                     conn.sendall(f"{MSG_REG_RESP}\n".encode('utf-8')) # envio el mensaje REG_RESP
                     print(f"Agente {id_agente} registrado desde {addr}")
 
@@ -106,6 +110,7 @@ def conexion_tcp(conn, addr):
                     conn.sendall(f"{respuesta}\n".encode('utf-8'))
 
                 elif comando == MSG_METRIC:
+                    print('recibo metrica')
                     if id_agente is None:
                         conn.sendall(b"ERROR\n")   # no registrado todavia
                         continue
