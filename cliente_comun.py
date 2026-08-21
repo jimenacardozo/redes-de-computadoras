@@ -3,5 +3,5 @@ from comun import descubrir_servidor
 
 
 #incluir try catch?? hay que tener la cadena completa
-descubrir_servidor()
+ip, cpu_th, mem_th, tcp_port = descubrir_servidor()
 #conexion tcp hacerla afuera
