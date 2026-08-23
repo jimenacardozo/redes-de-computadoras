@@ -14,6 +14,8 @@ cliente_tcp.send((f"{MSG_REGISTER} {CLAVE} \n").encode('utf-8'))
 while True:
     cpu = psutil.cpu_percent()
     memoria = psutil.virtual_memory().percent
-    cliente_tcp.send((f"METRIC CPU {cpu} \n").encode('utf-8'))
-    cliente_tcp.send((f"METRIC MEM {memoria} \n").encode('utf-8'))
+    print(f"enviando METRIC CPU {cpu}")
+    cliente_tcp.send((f"METRIC CPU {cpu}").encode('utf-8'))
+    print(f"enviando METRIC MEM {memoria}")
+    cliente_tcp.send((f"METRIC MEM {memoria}").encode('utf-8'))
     time.sleep(15)
