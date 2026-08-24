@@ -34,7 +34,6 @@ MSG_ERROR = "ERROR"
 MSG_END = "END"
 
 # Clave secreta
-CLAVE_SECRETA = "redes2026grupo21"
 CLAVE = "redes2026grupo21"
 
 

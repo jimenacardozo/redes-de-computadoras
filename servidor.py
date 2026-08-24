@@ -1,7 +1,7 @@
 import socket
 import threading
 from collections import deque
-from comun import UDP_PORT, HOST, TCP_PORT, MSG_DISCOVER, MSG_REGISTER, CLAVE_SECRETA, MSG_END, MSG_METRIC, MSG_REG_RESP, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS
+from comun import UDP_PORT, HOST, TCP_PORT, MSG_DISCOVER, MSG_REGISTER, CLAVE, MSG_END, MSG_METRIC, MSG_REG_RESP, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS
 
 MSG_SERVER = "SERVER"
 UMBRAL_CPU = 100
@@ -47,33 +47,26 @@ def conexion_tcp(conn, addr):
 
             # puede haber 0, 1 o varios mensajes completos en el buffer
             while "\n" in buffer:
-                print('entra al while')
                 linea, buffer = buffer.split("\n", 1)  # separa el primer mensaje del resto
                 mensaje = linea.strip()
-                print('pasa el strip')
-                print(f"{mensaje}")
                 if mensaje == "":
-                    print('mensaje vacio')
                     continue
 
                 partes = mensaje.split(" ", 1) # Divido con el primer espacio que encuentre en un maximo de 2 partes
                 comando = partes[0] # Me quedo con REGISTER/METRIC/END
-                print(f"{comando}")
                 if comando == MSG_REGISTER:
-                    print('entra a msg_register')
                     if len(partes) < 2: # Puede venir un REGISTER sin nada, manejamos eso
                         conn.sendall(b"ERROR\n")
                         continue
 
                     clave = partes[1]
-                    if clave != CLAVE_SECRETA:
+                    if clave != CLAVE:
                         conn.sendall(b"ERROR\n")
-                        print('clave incorrecta')
+                        print(f"Registro rechazado: clave incorrecta desde {addr}")
                         continue
 
                     # Lock asegura que solo un hilo a la vez puede ejecutar el codigo de adentro
                     with lock:
-                        print('entra al lock')
                         id_agente = siguiente_id
                         siguiente_id += 1  # sin 'global' arriba, esto tiraria UnboundLocalError
                         agentes[id_agente] = {
@@ -91,7 +84,7 @@ def conexion_tcp(conn, addr):
                         continue
 
                     clave = partes[1]
-                    if clave != CLAVE_SECRETA:   # misma constante que en REGISTER
+                    if clave != CLAVE:   # misma constante que en REGISTER
                         conn.sendall(b"ERROR\n")
                         continue
 
@@ -110,7 +103,6 @@ def conexion_tcp(conn, addr):
                     conn.sendall(f"{respuesta}\n".encode('utf-8'))
 
                 elif comando == MSG_METRIC:
-                    print('recibo metrica')
                     if id_agente is None:
                         conn.sendall(b"ERROR\n")   # no registrado todavia
                         continue
@@ -118,13 +110,18 @@ def conexion_tcp(conn, addr):
                     # mensaje = "METRIC CPU 45.2" -> partes = ["METRIC", "CPU", "45.2"]
                     _, nombre_metrica, valor = mensaje.split(" ")
                     with lock:
-                        agentes[id_agente][nombre_metrica.lower()].append(float(valor)) 
+                        agentes[id_agente][nombre_metrica.lower()].append(float(valor))
                         # Si hacemo float de un valor que no sea parseable a int esto de error capaz hay que hacer un chequeo?
+                        cola_cpu = list(agentes[id_agente]["cpu"])
+                        cola_mem = list(agentes[id_agente]["mem"])
+                    print(f"[{nombre_metrica}] Nueva métrica: {valor}")
+                    print(f"      Cola CPU: {cola_cpu}")
+                    print(f"      Cola MEM: {cola_mem}\n")
 
                     # chequeo de umbral
                     umbral = UMBRAL_CPU if nombre_metrica == "CPU" else UMBRAL_MEM
                     if float(valor) > umbral:
-                        print(f"[ALERTA] Agente {id_agente}: {nombre_metrica}={float(valor)} supera umbral {umbral}")
+                        print(f"ALERTA: agente {id_agente} supera el umbral de {nombre_metrica} ({float(valor)} > {umbral})")
                         # aca tambien corresponderia registrar esto, segun pide la letra (ver como)
 
                 elif comando == MSG_END:
@@ -160,14 +157,12 @@ def manejar_conexion_tcp():
         
 
 hilo_udp = threading.Thread(target=manejar_conexion_udp, daemon=True) #Crea un hilo para manejar la conexion UDP
-print("Hilo UDP creado")
 hilo_tcp = threading.Thread(target=manejar_conexion_tcp, daemon=True) #Crea un hilo para manejar la conexion TCP
-print("Hilo TCP creado")
 
 hilo_udp.start() #Inicia el hilo UDP
-print("Hilo UDP iniciado")
+print("Servidor UDP iniciado")
 hilo_tcp.start() #Inicia el hilo TCP
-print("Hilo TCP iniciado")
+print("Servidor TCP iniciado")
 
 hilo_udp.join() #Espera a que el hilo UDP termine
 hilo_tcp.join() #Espera a que el hilo TCP termine
