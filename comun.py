@@ -37,34 +37,15 @@ MSG_END = "END"
 CLAVE = "redes2026grupo21"
 
 
-class LineReader:
-    """
-    Envuelve un socket TCP para leer mensajes completos (terminados en \n),
-    manteniendo un buffer entre llamadas porque un recv() puede traer
-    datos de más de un mensaje, o de un mensaje incompleto.
-
-    Uso: un LineReader por conexión (cada agente conectado al servidor
-    tiene el suyo).
-    """
-
-    def __init__(self, sock: socket.socket):
-        self.sock = sock
-        self._buffer = b""
-
-    def recv_line(self) -> str | None:
-        """
-        Devuelve el próximo mensaje completo (sin el \n), o None si el
-        socket se cerró (peer hizo close / envió FIN).
-        """
-        while b"\n" not in self._buffer:
-            datos = self.sock.recv(TCP_RECV_BUFSIZE)
-            if not datos:
-                # El otro extremo cerró la conexión
-                return None
-            self._buffer += datos
-
-        linea, self._buffer = self._buffer.split(b"\n", 1)
-        return linea.decode("utf-8")
+def recv_line(socket, buffer) -> tuple[str | None, bytes]:
+    while b"\n" not in buffer:
+        datos = socket.recv(TCP_RECV_BUFSIZE)
+        if not datos:
+            # El otro extremo cerró la conexión
+            return None, None
+        buffer += datos
+    linea, buffer = buffer.split(b"\n", 1)
+    return linea.decode("utf-8"), buffer
 
 
 def parse_msg(linea: str) -> tuple[str, list[str]]:
@@ -75,9 +56,7 @@ def parse_msg(linea: str) -> tuple[str, list[str]]:
     partes = linea.strip().split(" ")
     return partes[0], partes[1:]
 
-
 # Descubrimiento UDP (lado cliente: lo usan cliente_comun y cliente_admin)
-
 def descubrir_servidor():
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # Instancia UDP
     udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1) # Permite broadcast
