@@ -1,5 +1,5 @@
 import socket
-from comun import descubrir_servidor, recv_line, CLAVE, MSG_GET_METRIC, MSG_GET_PROC
+from comun import descubrir_servidor, recv_line, CLAVE, MSG_GET_METRIC, MSG_GET_PROC, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS
 
 ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
 
@@ -7,14 +7,14 @@ cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 cliente_tcp.connect((ip, tcp_port))
 
 buffer = b""  # acumula bytes hasta tener una linea completa
-cliente_tcp.send((f"ADMIN {CLAVE}\n").encode('utf-8'))
+cliente_tcp.send((f"{MSG_ADMIN} {CLAVE}\n").encode('utf-8'))
 respuesta, buffer = recv_line(cliente_tcp, buffer)
 if respuesta is None:
     print("No se recibió respuesta del servidor.")
     cliente_tcp.close()
     exit(1)
 
-if respuesta == "ADMIN_RESP":
+if respuesta == MSG_ADMIN_RESP:
     print("Comandos disponibles:")
     print(" L -> Listar agentes conectados")
     print(" M <x> <CPU|MEM> -> Ver métrica del agente x (ej: M 1 CPU)")
@@ -25,7 +25,7 @@ if respuesta == "ADMIN_RESP":
         print("Comando vacío")
 
     elif partes[0] == "L":
-        cliente_tcp.send((f"LIST_AGENTS\n").encode('utf-8'))
+        cliente_tcp.send((f"{MSG_LIST_AGENTS}\n").encode('utf-8'))
         respuesta = cliente_tcp.recv(2048)
         print(respuesta.decode('utf-8').strip())
 
@@ -46,3 +46,5 @@ if respuesta == "ADMIN_RESP":
         
     else:
         print("Comando inválido.")
+
+# TODO: CLOSE: cerrar el socket y el hilo de manera ordenada

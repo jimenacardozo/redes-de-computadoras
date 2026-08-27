@@ -1,9 +1,20 @@
 import socket
 import threading
 from collections import deque
-from comun import recv_line, UDP_PORT, HOST, TCP_PORT, MSG_DISCOVER, MSG_REGISTER, CLAVE, MSG_END, MSG_METRIC, MSG_REG_RESP, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS, MSG_GET_PROC, MSG_PROC, MSG_GET_METRIC, MSG_MEASUREMENTS, MSG_ALERT
+from comun import (
+    recv_line, UDP_PORT, CLAVE,
+    MSG_DISCOVER, MSG_REGISTER, MSG_REG_RESP,
+    MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS,
+    MSG_GET_PROC, MSG_PROC, MSG_GET_METRIC,
+)
 
+HOST = "0.0.0.0"
+TCP_PORT = 1234 # definir bien
 MSG_SERVER = "SERVER"
+MSG_METRIC = "METRIC"
+MSG_MEASUREMENTS = "MEASUREMENTS"
+MSG_ALERT = "ALERT"
+MSG_END = "END"
 UMBRAL_CPU = 100
 UMBRAL_MEM = 100
 
@@ -217,7 +228,9 @@ print("Servidor UDP iniciado")
 hilo_tcp.start() #Inicia el hilo TCP
 print("Servidor TCP iniciado")
 
-hilo_udp.join() #Espera a que el hilo UDP termine
-hilo_tcp.join() #Espera a que el hilo TCP termine
-
+try:
+    hilo_udp.join() #Espera a que el hilo UDP termine
+    hilo_tcp.join() #Espera a que el hilo TCP termine
+except KeyboardInterrupt:   
+    print("Servidor detenido por el usuario")
 
