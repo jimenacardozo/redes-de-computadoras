@@ -1,9 +1,7 @@
 import socket
 import time
 
-HOST = "0.0.0.0"
-UDP_PORT = 6021
-TCP_PORT = 1234 # definir bien
+UDP_PORT = 6021 # usado por descubrir_servidor() aca abajo y por servidor.py
 
 DISCOVERY_TIMEOUT = 3 # segundos que se espera respuesta SERVER
 DISCOVERY_RETRIES = 3
@@ -16,22 +14,18 @@ MSG_SERVER = "SERVER"
 # TCP - comun
 MSG_REGISTER = "REGISTER"
 MSG_REG_RESP = "REG_RESP"
-MSG_METRIC = "METRIC"
 MSG_GET_PROC = "GET_PROC"
 MSG_PROC = "PROC"
-MSG_ALERT = "ALERT"
 
 # TCP - admin
 MSG_ADMIN = "ADMIN"
 MSG_ADMIN_RESP = "ADMIN_RESP"
 MSG_LIST_AGENTS = "LIST_AGENTS"
-MSG_AGENTS = "AGENTS"
+MSG_AGENTS = "AGENTS" # TODO: no se usa en ningun archivo, revisar
 MSG_GET_METRIC = "GET_METRIC"
-MSG_MEASUREMENTS = "MEASUREMENTS"
 
 # Comunes a ambos
-MSG_ERROR = "ERROR"
-MSG_END = "END"
+MSG_ERROR = "ERROR" # TODO: no se usa en ningun archivo, revisar
 
 # Clave secreta
 CLAVE = "redes2026grupo21"
