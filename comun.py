@@ -21,8 +21,9 @@ MSG_PROC = "PROC"
 MSG_ADMIN = "ADMIN"
 MSG_ADMIN_RESP = "ADMIN_RESP"
 MSG_LIST_AGENTS = "LIST_AGENTS"
-MSG_AGENTS = "AGENTS" # TODO: no se usa en ningun archivo, revisar
+MSG_METRIC = "METRIC"
 MSG_GET_METRIC = "GET_METRIC"
+MSG_ALERT = "ALERT"
 
 # Comunes a ambos
 MSG_ERROR = "ERROR" # TODO: no se usa en ningun archivo, revisar

@@ -1,20 +1,21 @@
 import socket
 import threading
 from collections import deque
+from datetime import datetime
 from comun import (
     recv_line, UDP_PORT, CLAVE,
     MSG_DISCOVER, MSG_REGISTER, MSG_REG_RESP,
     MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS,
-    MSG_GET_PROC, MSG_PROC, MSG_GET_METRIC,
+    MSG_GET_PROC, MSG_PROC, MSG_GET_METRIC, MSG_ALERT, 
+    MSG_METRIC, MSG_ERROR
 )
 
 HOST = "0.0.0.0"
 TCP_PORT = 1234 # definir bien
 
 MSG_SERVER = "SERVER"
-MSG_METRIC = "METRIC"
+MSG_AGENTS = "AGENTS"
 MSG_MEASUREMENTS = "MEASUREMENTS"
-MSG_ALERT = "ALERT"
 MSG_END = "END"
 
 UMBRAL_CPU = 100
@@ -24,6 +25,7 @@ UMBRAL_MEM = 100
 agentes = {}
 siguiente_id = 1
 lock = threading.Lock()
+bitacora = open("log.txt", "w") #con w crea el archivo si no existe y lo vacia si ya existe. 
 
 def manejar_conexion_udp():
     servidor_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # AF_INET -> IPv4, SOCK_DGRAM -> UDP
@@ -56,30 +58,17 @@ def conexion_tcp(conn, addr):
             #no alcanza con cortar el de adentro de la funcion, porque sigo dentro del while
             if mensaje is None:
                 break  # el cliente cerro la conexion
-            
-            # data = conn.recv(1024) #recibo data
-            # if not data:
-            #     break # el cliente cerro la conexion
-
-            # buffer += data.decode('utf-8')
-
-            # # puede haber 0, 1 o varios mensajes completos en el buffer
-            # while "\n" in buffer:
-            #     linea, buffer = buffer.split("\n", 1)  # separa el primer mensaje del resto
-            #     mensaje = linea.strip()
-            #     if mensaje == "":
-            #         continue
 
             partes = mensaje.split(" ", 1) # Divido con el primer espacio que encuentre en un maximo de 2 partes
             comando = partes[0] # Me quedo con REGISTER/METRIC/END
             if comando == MSG_REGISTER:
                 if len(partes) < 2: # Puede venir un REGISTER sin nada, manejamos eso
-                    conn.sendall(b"ERROR\n")
+                    conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))
                     continue
 
                 clave = partes[1]
                 if clave != CLAVE:
-                    conn.sendall(b"ERROR\n")
+                    conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))
                     print(f"Registro rechazado: clave incorrecta desde {addr}")
                     continue
 
@@ -92,18 +81,20 @@ def conexion_tcp(conn, addr):
                         "addr": addr,
                         "cpu": deque(maxlen=10),
                         "mem": deque(maxlen=10),
+                        "procesos": None,
+                        "proc_event": None,
                     }
                 conn.sendall(f"{MSG_REG_RESP}\n".encode('utf-8')) # envio el mensaje REG_RESP
                 print(f"Agente {id_agente} registrado desde {addr}")
 
             elif comando == MSG_ADMIN:
                 if len(partes) < 2:
-                    conn.sendall(b"ERROR\n")
+                    conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))
                     continue
 
                 clave = partes[1]
                 if clave != CLAVE:   # misma constante que en REGISTER
-                    conn.sendall(b"ERROR\n")
+                    conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))
                     continue
 
                 es_admin = True   # marca que esta conexion es un admin, no un agente comun
@@ -112,17 +103,17 @@ def conexion_tcp(conn, addr):
 
             elif comando == MSG_LIST_AGENTS:
                 if not es_admin:            
-                    conn.sendall(b"ERROR\n")
+                    conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))
                     continue
                 
                 with lock:
                     ids = list(agentes.keys())
-                respuesta = f"AGENTS {len(ids)} " + " ".join(str(i) for i in ids)
+                respuesta = f"{MSG_AGENTS} {len(ids)} " + " ".join(str(i) for i in ids)
                 conn.sendall(f"{respuesta}\n".encode('utf-8'))
 
             elif comando == MSG_METRIC:
                 if id_agente is None:
-                    conn.sendall(b"ERROR\n")   # no registrado todavia
+                    conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))   # no registrado todavia
                     continue
 
                 # mensaje = "METRIC CPU 45.2" -> partes = ["METRIC", "CPU", "45.2"]
@@ -137,6 +128,7 @@ def conexion_tcp(conn, addr):
                 print(f"Cola MEM: {cola_mem}\n")
 
                 # chequeo de umbral
+                # TODO: Deberiamos hacer un chequeo de que nombre_metrica sea CPU o MEM ???? 
                 umbral = UMBRAL_CPU if nombre_metrica == "CPU" else UMBRAL_MEM
                 if float(valor) > umbral:
                     print(f"ALERTA: agente {id_agente} supera el umbral de {nombre_metrica} ({float(valor)} > {umbral})")
@@ -148,29 +140,50 @@ def conexion_tcp(conn, addr):
                 with lock: # Bloqueo para acceder a la estructura compartida de agentes
                     agente = agentes.get(int(id_solicitado))
                     if agente is None:
-                        conn.sendall(f"ERROR: agente {id_solicitado} no encontrado\n".encode('utf-8'))
-
-                    socket = agente["conn"]
-                    # Envio al agente comun el mensaje GET_PROC para que me devuelva la lista de procesos
-                    # TODO: esto puede fallar? 
-                    socket.sendall(f"{MSG_GET_PROC}\n".encode('utf-8')) 
-                    
-                    buffer_res = b""  # acumula bytes hasta tener una linea completa
-                    procesos, buffer_res = recv_line(socket, buffer_res) # Recibo la respuesta del agente comun
-                    if procesos is None:
-                        conn.sendall(f"ERROR: agente {id_solicitado} no respondio\n".encode('utf-8'))
+                        conn.sendall(f"{MSG_ERROR}: agente {id_solicitado} no encontrado\n".encode('utf-8'))
                         continue
 
-                    procesos = procesos.split(" ", 1)[1] # Me quedo con la parte de la lista de procesos, descartando el MSG_PROC
-                    conn.sendall( f"{MSG_PROC} {id_solicitado} {procesos}\n".encode('utf-8')) # Respondo al admin con la lista de procesos del agente comun
+                    evento = threading.Event() # Creo un evento para sincronizar el hilo del admin con el hilo del agente comun
+                    agente["proc_event"] = evento
+                    agente["procesos"] = None
+                    socket = agente["conn"]
+
+                # Envio al agente comun el mensaje GET_PROC para que me devuelva la lista de procesos
+                # TODO: esto puede fallar? 
+                socket.sendall(f"{MSG_GET_PROC}\n".encode('utf-8')) 
+
+                llego = evento.wait(timeout=5)  # espera hasta 5s la respuesta del agente
+                if not llego:
+                    conn.sendall(f"{MSG_ERROR}\n".encode("utf-8"))
+                    continue
+
+                with lock:
+                    resultado = agente["procesos"]
+
+                conn.sendall( f"{MSG_PROC} {id_solicitado} {resultado}\n".encode('utf-8')) # Respondo al admin con la lista de procesos del agente comun
+
+            elif comando == MSG_PROC:
+                with lock: # Bloqueo para acceder a la estructura compartida de agentes
+                    agente = agentes.get(int(id_agente))
+                    if agente is None: #agente no esta
+                        continue
+
+                    evento = agente.get("proc_event")
+                    if len(partes) > 1:
+                        agente["procesos"] = partes[1]
+                    else:
+                        agente["procesos"] = ""
+
+                if evento is not None:
+                    evento.set()   # despierta al hilo del admin que estaba esperando
             
             elif comando == MSG_GET_METRIC:
                 if not es_admin:  # TODO: esto es necesario? 
-                    conn.sendall(b"ERROR\n")
+                    conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))
                     continue
                 
                 if len(partes) < 2: # TODO: esto es necesario? 
-                    conn.sendall(b"ERROR\n")
+                    conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))
                     continue
 
                 id_solicitado, nombre_metrica = partes[1].split(" ")
@@ -180,20 +193,27 @@ def conexion_tcp(conn, addr):
                 
                 with lock:
                     agente = agentes.get(int(id_solicitado))
+                    if agente is None:
+                        conn.sendall(f"{MSG_ERROR}: agente {id_solicitado} no encontrado\n".encode('utf-8'))
+                        continue
+
                     cola = agente[nombre_metrica.lower()] #TODO: deberiamos guardar una copia?
                 
                 texto_valores = " ".join(str(v) for v in cola)
                 conn.sendall(f"{MSG_MEASUREMENTS} {id_solicitado} {nombre_metrica} {len(cola)} {texto_valores}\n".encode('utf-8'))
 
             elif comando == MSG_ALERT:
-                #TODO: guardar una bitacora (log) de alertas en el servidor
-                print('')   
+                # mensaje = "ALERT CPU 45.2" -> partes = ["ALERT", "CPU", "45.2"]
+                _, nombre_metrica, valor = mensaje.split(" ")
+                mensaje_alerta = f"{MSG_ALERT} - {datetime.now()}: agente {id_agente} supera el umbral de {nombre_metrica} con {valor}"
+                bitacora.write(f"{mensaje_alerta}\n")
+                print(f"{mensaje_alerta}")   
 
             elif comando == MSG_END:
-                break    
+                break # Sale a fuera del while y cierra la conexion TCP pasando por finally
 
             else:
-                conn.sendall(b"ERROR\n")
+                conn.sendall(f"{MSG_ERROR}\n".encode('utf-8'))
                 print(f"Comando no reconocido: {mensaje}")
 
     finally:
@@ -221,7 +241,6 @@ def manejar_conexion_tcp():
         #Cada thread se corresponde con un cliente que se conecto al servidor
         threading.Thread(target=conexion_tcp, args=(conn, addr), daemon=True).start() 
         
-
 hilo_udp = threading.Thread(target=manejar_conexion_udp, daemon=True) #Crea un hilo para manejar la conexion UDP
 hilo_tcp = threading.Thread(target=manejar_conexion_tcp, daemon=True) #Crea un hilo para manejar la conexion TCP
 
@@ -233,6 +252,6 @@ print("Servidor TCP iniciado")
 try:
     hilo_udp.join() #Espera a que el hilo UDP termine
     hilo_tcp.join() #Espera a que el hilo TCP termine
-except KeyboardInterrupt:   
+except KeyboardInterrupt: 
+    bitacora.close() #Cierra el archivo de bitacora  
     print("Servidor detenido por el usuario")
-
