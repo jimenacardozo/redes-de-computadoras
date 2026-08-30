@@ -3,7 +3,7 @@ import threading
 from collections import deque
 from datetime import datetime
 from comun import (
-    recv_line, enviar_linea, UDP_PORT, CLAVE,
+    recv_line, enviar_linea, parse_msg, UDP_PORT, CLAVE,
     MSG_DISCOVER, MSG_REGISTER, MSG_REG_RESP,
     MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS,
     MSG_GET_PROC, MSG_PROC, MSG_GET_METRIC, MSG_ALERT, 
@@ -49,8 +49,194 @@ def manejar_conexion_udp():
             respuesta = f"Mensaje no reconocido: {mensaje}\n"
             servidor_udp.sendto(respuesta.encode('utf-8'), addr) #Envía la respuesta al cliente UDP
 
-def conexion_tcp(conn, addr):
+
+def registrar_agente_comun(conn, addr, argumentos):
     global siguiente_id
+
+    if len(argumentos) != 1 or argumentos[0] != CLAVE:
+        enviar_linea(conn, MSG_ERROR)
+        print(f"Registro de agente comun rechazado desde {addr}")
+        return None
+
+    with lock:
+        id_agente = siguiente_id
+        siguiente_id += 1
+        agentes[id_agente] = {
+            "conn": conn,
+            "addr": addr,
+            "cpu": deque(maxlen=10),
+            "mem": deque(maxlen=10),
+            "procesos": None,
+            "proc_event": None,
+        }
+
+    enviar_linea(conn, MSG_REG_RESP)
+    print(f"Agente {id_agente} registrado desde {addr}")
+    return id_agente
+
+
+def registrar_admin(conn, addr, argumentos):
+    if len(argumentos) != 1 or argumentos[0] != CLAVE:
+        enviar_linea(conn, MSG_ERROR)
+        print(f"Registro de admin rechazado desde {addr}")
+        return False
+
+    enviar_linea(conn, MSG_ADMIN_RESP)
+    print(f"Admin conectado desde {addr}")
+    return True
+
+
+def manejar_mensaje_comun(conn, id_agente, comando, argumentos):
+    if comando == MSG_METRIC:
+        if len(argumentos) != 2:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        nombre_metrica, valor_texto = argumentos
+        nombre_metrica = nombre_metrica.upper()
+        if nombre_metrica not in {"CPU", "MEM"}:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        try:
+            valor = float(valor_texto)
+        except ValueError:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        with lock:
+            agentes[id_agente][nombre_metrica.lower()].append(valor)
+            cola_cpu = list(agentes[id_agente]["cpu"])
+            cola_mem = list(agentes[id_agente]["mem"])
+
+        print(f"[{nombre_metrica}] Nueva metrica: {valor}")
+        print(f"Cola CPU: {cola_cpu}")
+        print(f"Cola MEM: {cola_mem}\n")
+
+    elif comando == MSG_PROC:
+        procesos = " ".join(argumentos)
+        with lock:
+            agente = agentes.get(id_agente)
+            if agente is not None:
+                agente["procesos"] = procesos
+                evento = agente.get("proc_event")
+
+        if agente is None:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        if evento is not None:
+            evento.set()
+
+    elif comando == MSG_ALERT:
+        if len(argumentos) != 2:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        nombre_metrica, valor_texto = argumentos
+        nombre_metrica = nombre_metrica.upper()
+        if nombre_metrica not in {"CPU", "MEM"}:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        try:
+            valor = float(valor_texto)
+        except ValueError:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        mensaje_alerta = (
+            f"{MSG_ALERT} - {datetime.now()}: agente {id_agente} supera "
+            f"el umbral de {nombre_metrica} con {valor}"
+        )
+        bitacora.write(f"{mensaje_alerta}\n")
+        print(mensaje_alerta)
+
+
+def manejar_mensaje_admin(conn, comando, argumentos):
+    if comando == MSG_LIST_AGENTS:
+        if argumentos:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        with lock:
+            ids = list(agentes.keys())
+        respuesta = f"{MSG_AGENTS} {len(ids)}"
+        if ids:
+            respuesta += " " + " ".join(str(i) for i in ids)
+        enviar_linea(conn, respuesta)
+
+    elif comando == MSG_GET_PROC:
+        if len(argumentos) != 1:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        try:
+            id_solicitado = int(argumentos[0])
+        except ValueError:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        with lock:
+            agente = agentes.get(id_solicitado)
+            if agente is not None:
+                evento = threading.Event()
+                agente["proc_event"] = evento
+                agente["procesos"] = None
+                socket_agente = agente["conn"]
+
+        if agente is None:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        enviar_linea(socket_agente, MSG_GET_PROC)
+
+        if not evento.wait(timeout=5):
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        with lock:
+            resultado = agente["procesos"]
+
+        enviar_linea(conn, f"{MSG_PROC} {id_solicitado} {resultado}")
+
+    elif comando == MSG_GET_METRIC:
+        if len(argumentos) != 2:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        id_texto, nombre_metrica = argumentos
+        nombre_metrica = nombre_metrica.upper()
+        if nombre_metrica not in {"CPU", "MEM"}:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        try:
+            id_solicitado = int(id_texto)
+        except ValueError:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        with lock:
+            agente = agentes.get(id_solicitado)
+            if agente is not None:
+                valores = list(agente[nombre_metrica.lower()])
+
+        if agente is None:
+            enviar_linea(conn, MSG_ERROR)
+            return
+
+        texto_valores = " ".join(str(valor) for valor in valores)
+        respuesta = (
+            f"{MSG_MEASUREMENTS} {id_solicitado} {nombre_metrica} "
+            f"{len(valores)}"
+        )
+        if valores:
+            respuesta += f" {texto_valores}"
+        enviar_linea(conn, respuesta)
+
+
+def conexion_tcp(conn, addr):
     id_agente = None
     rol = ROL_SIN_REGISTRAR
     buffer = b""  # acumula bytes hasta tener una linea completa
@@ -62,167 +248,39 @@ def conexion_tcp(conn, addr):
             if mensaje is None:
                 break  # el cliente cerro la conexion
 
-            partes = mensaje.split(" ", 1) # Divido con el primer espacio que encuentre en un maximo de 2 partes
-            comando = partes[0] # Me quedo con REGISTER/METRIC/END
+            comando, argumentos = parse_msg(mensaje)
 
             # El primer mensaje define el rol de la conexion. Despues, cada rol
             # solo puede usar los comandos que le corresponden.
             if rol == ROL_SIN_REGISTRAR:
-                if comando not in {MSG_REGISTER, MSG_ADMIN}:
+                if comando == MSG_REGISTER:
+                    nuevo_id = registrar_agente_comun(conn, addr, argumentos)
+                    if nuevo_id is not None:
+                        id_agente = nuevo_id
+                        rol = ROL_COMUN
+                elif comando == MSG_ADMIN:
+                    if registrar_admin(conn, addr, argumentos):
+                        rol = ROL_ADMIN
+                else:
+                    enviar_linea(conn, MSG_ERROR)
+                continue
+
+            if comando == MSG_END:
+                if argumentos:
                     enviar_linea(conn, MSG_ERROR)
                     continue
-            elif rol == ROL_COMUN:
+                break
+
+            if rol == ROL_COMUN:
                 if comando not in COMANDOS_COMUN:
                     enviar_linea(conn, MSG_ERROR)
                     continue
+                manejar_mensaje_comun(conn, id_agente, comando, argumentos)
             elif rol == ROL_ADMIN:
                 if comando not in COMANDOS_ADMIN:
                     enviar_linea(conn, MSG_ERROR)
                     continue
-
-            if comando == MSG_REGISTER:
-                if len(partes) < 2: # Puede venir un REGISTER sin nada, manejamos eso
-                    enviar_linea(conn, MSG_ERROR)
-                    continue
-
-                clave = partes[1]
-                if clave != CLAVE:
-                    enviar_linea(conn, MSG_ERROR)
-                    print(f"Registro rechazado: clave incorrecta desde {addr}")
-                    continue
-
-                # Lock asegura que solo un hilo a la vez puede ejecutar el codigo de adentro
-                with lock:
-                    id_agente = siguiente_id
-                    siguiente_id += 1  # sin 'global' arriba, esto tiraria UnboundLocalError
-                    agentes[id_agente] = {
-                        "conn": conn,
-                        "addr": addr,
-                        "cpu": deque(maxlen=10),
-                        "mem": deque(maxlen=10),
-                        "procesos": None,
-                        "proc_event": None,
-                    }
-                rol = ROL_COMUN
-                enviar_linea(conn, MSG_REG_RESP) # envio el mensaje REG_RESP
-                print(f"Agente {id_agente} registrado desde {addr}")
-
-            elif comando == MSG_ADMIN:
-                if len(partes) < 2:
-                    enviar_linea(conn, MSG_ERROR)
-                    continue
-
-                clave = partes[1]
-                if clave != CLAVE:   # misma constante que en REGISTER
-                    enviar_linea(conn, MSG_ERROR)
-                    continue
-
-                rol = ROL_ADMIN
-                enviar_linea(conn, MSG_ADMIN_RESP)
-                print(f"Admin conectado desde {addr}")
-
-            elif comando == MSG_LIST_AGENTS:
-                with lock:
-                    ids = list(agentes.keys())
-                respuesta = f"{MSG_AGENTS} {len(ids)} " + " ".join(str(i) for i in ids)
-                enviar_linea(conn, respuesta)
-
-            elif comando == MSG_METRIC:
-                # mensaje = "METRIC CPU 45.2" -> partes = ["METRIC", "CPU", "45.2"]
-                _, nombre_metrica, valor = mensaje.split(" ")
-                with lock:
-                    agentes[id_agente][nombre_metrica.lower()].append(float(valor))
-                    # TODO: Si hacemo float de un valor que no sea parseable a int esto de error capaz hay que hacer un chequeo?
-                    cola_cpu = list(agentes[id_agente]["cpu"])
-                    cola_mem = list(agentes[id_agente]["mem"])
-                print(f"[{nombre_metrica}] Nueva métrica: {valor}")
-                print(f"Cola CPU: {cola_cpu}")
-                print(f"Cola MEM: {cola_mem}\n")
-
-                # chequeo de umbral
-                # TODO: Deberiamos hacer un chequeo de que nombre_metrica sea CPU o MEM ???? 
-                umbral = UMBRAL_CPU if nombre_metrica == "CPU" else UMBRAL_MEM
-                if float(valor) > umbral:
-                    print(f"ALERTA: agente {id_agente} supera el umbral de {nombre_metrica} ({float(valor)} > {umbral})")
-                    #TODO: falta escribir bitacora, aca tambien corresponderia registrar esto, segun pide la letra (ver como)
-            
-            elif comando == MSG_GET_PROC:
-                id_solicitado = partes[1] # id de agente comun que el admin quiere consultar
-
-                with lock: # Bloqueo para acceder a la estructura compartida de agentes
-                    agente = agentes.get(int(id_solicitado))
-                    if agente is None:
-                        enviar_linea(conn, f"{MSG_ERROR}: agente {id_solicitado} no encontrado")
-                        continue
-
-                    evento = threading.Event() # Creo un evento para sincronizar el hilo del admin con el hilo del agente comun
-                    agente["proc_event"] = evento
-                    agente["procesos"] = None
-                    socket = agente["conn"]
-
-                # Envio al agente comun el mensaje GET_PROC para que me devuelva la lista de procesos
-                # TODO: esto puede fallar? 
-                enviar_linea(socket, MSG_GET_PROC)
-
-                llego = evento.wait(timeout=5)  # espera hasta 5s la respuesta del agente
-                if not llego:
-                    enviar_linea(conn, MSG_ERROR)
-                    continue
-
-                with lock:
-                    resultado = agente["procesos"]
-
-                enviar_linea(conn, f"{MSG_PROC} {id_solicitado} {resultado}") # Respondo al admin con la lista de procesos del agente comun
-
-            elif comando == MSG_PROC:
-                with lock: # Bloqueo para acceder a la estructura compartida de agentes
-                    agente = agentes.get(int(id_agente))
-                    if agente is None: #agente no esta
-                        continue
-
-                    evento = agente.get("proc_event")
-                    if len(partes) > 1:
-                        agente["procesos"] = partes[1]
-                    else:
-                        agente["procesos"] = ""
-
-                if evento is not None:
-                    evento.set()   # despierta al hilo del admin que estaba esperando
-            
-            elif comando == MSG_GET_METRIC:
-                if len(partes) < 2: # TODO: esto es necesario? 
-                    enviar_linea(conn, MSG_ERROR)
-                    continue
-
-                id_solicitado, nombre_metrica = partes[1].split(" ")
-
-                # TODO: tendriamos que manejar si nombre_metrica es cualquier cosa?
-                # TODO: Tendriamos que manajear si id_solicitado no es un numero o no existe en agentes?
-                
-                with lock:
-                    agente = agentes.get(int(id_solicitado))
-                    if agente is None:
-                        enviar_linea(conn, f"{MSG_ERROR}: agente {id_solicitado} no encontrado")
-                        continue
-
-                    cola = agente[nombre_metrica.lower()] #TODO: deberiamos guardar una copia?
-                
-                texto_valores = " ".join(str(v) for v in cola)
-                enviar_linea(conn, f"{MSG_MEASUREMENTS} {id_solicitado} {nombre_metrica} {len(cola)} {texto_valores}")
-
-            elif comando == MSG_ALERT:
-                # mensaje = "ALERT CPU 45.2" -> partes = ["ALERT", "CPU", "45.2"]
-                _, nombre_metrica, valor = mensaje.split(" ")
-                mensaje_alerta = f"{MSG_ALERT} - {datetime.now()}: agente {id_agente} supera el umbral de {nombre_metrica} con {valor}"
-                bitacora.write(f"{mensaje_alerta}\n")
-                print(f"{mensaje_alerta}")   
-
-            elif comando == MSG_END:
-                break # Sale a fuera del while y cierra la conexion TCP pasando por finally
-
-            else:
-                enviar_linea(conn, MSG_ERROR)
-                print(f"Comando no reconocido: {mensaje}")
+                manejar_mensaje_admin(conn, comando, argumentos)
 
     finally:
         # esto se ejecuta SIEMPRE al salir de la funcion: por END, por desconexion,

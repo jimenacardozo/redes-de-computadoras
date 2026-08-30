@@ -56,7 +56,9 @@ def parse_msg(linea: str) -> tuple[str, list[str]]:
     Separa un mensaje en (tipo, [argumentos]).
     Ej: "SERVER 80 90 5000" -> ("SERVER", ["80", "90", "5000"])
     """
-    partes = linea.strip().split(" ")
+    partes = linea.strip().split()
+    if not partes:
+        return "", []
     return partes[0], partes[1:]
 
 # Descubrimiento UDP (lado cliente: lo usan cliente_comun y cliente_admin)
