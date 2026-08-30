@@ -1,5 +1,5 @@
 import socket
-from comun import descubrir_servidor, recv_line, CLAVE, MSG_GET_METRIC, MSG_GET_PROC, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS
+from comun import descubrir_servidor, recv_line, enviar_linea, CLAVE, MSG_GET_METRIC, MSG_GET_PROC, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS
 
 ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
 
@@ -7,7 +7,7 @@ cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 cliente_tcp.connect((ip, tcp_port))
 
 buffer = b""  # acumula bytes hasta tener una linea completa
-cliente_tcp.send((f"{MSG_ADMIN} {CLAVE}\n").encode('utf-8'))
+enviar_linea(cliente_tcp, f"{MSG_ADMIN} {CLAVE}")
 
 while True:
     respuesta, buffer = recv_line(cliente_tcp, buffer)
@@ -28,7 +28,7 @@ while True:
             print("Comando vacío")
 
         elif partes[0] == "L":
-            cliente_tcp.sendall((f"{MSG_LIST_AGENTS}\n").encode('utf-8'))
+            enviar_linea(cliente_tcp, MSG_LIST_AGENTS)
             respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
             if respuesta is None:
                 print("No se recibió respuesta del servidor.")
@@ -41,7 +41,7 @@ while True:
             if tipo_metrica not in ["CPU", "MEM"]:
                 print("Tipo de métrica inválido. Use CPU o MEM.")
             else:
-                cliente_tcp.sendall((f"{MSG_GET_METRIC} {agente_id} {tipo_metrica}\n").encode('utf-8'))
+                enviar_linea(cliente_tcp, f"{MSG_GET_METRIC} {agente_id} {tipo_metrica}")
                 respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
                 if respuesta is None:
                     print("No se recibió respuesta del servidor.")
@@ -54,7 +54,7 @@ while True:
             #TODO: como se cual es el id de agente?? partes[1] es el indice nomas
             #se puede llamar al list agents y volver a convertirlo?
             #hacemos que sea necesario pedir antes la L para guardar la lista antes> o en el medio me la pueden cambiar?
-            cliente_tcp.sendall((f"{MSG_GET_PROC} {agente_id}\n").encode('utf-8'))
+            enviar_linea(cliente_tcp, f"{MSG_GET_PROC} {agente_id}")
             respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
             if respuesta is None:
                 print("No se recibió respuesta del servidor.")

@@ -14,19 +14,22 @@ MSG_SERVER = "SERVER"
 # TCP - comun
 MSG_REGISTER = "REGISTER"
 MSG_REG_RESP = "REG_RESP"
+MSG_METRIC = "METRIC"
 MSG_GET_PROC = "GET_PROC"
 MSG_PROC = "PROC"
+MSG_ALERT = "ALERT"
 
 # TCP - admin
 MSG_ADMIN = "ADMIN"
 MSG_ADMIN_RESP = "ADMIN_RESP"
 MSG_LIST_AGENTS = "LIST_AGENTS"
-MSG_METRIC = "METRIC"
+MSG_AGENTS = "AGENTS"
 MSG_GET_METRIC = "GET_METRIC"
-MSG_ALERT = "ALERT"
+MSG_MEASUREMENTS = "MEASUREMENTS"
 
 # Comunes a ambos
 MSG_ERROR = "ERROR" # TODO: no se usa en ningun archivo, revisar
+MSG_END = "END"
 
 # Clave secreta
 CLAVE = "redes2026grupo21"
@@ -41,6 +44,11 @@ def recv_line(socket, buffer) -> tuple[str | None, bytes]:
         buffer += datos
     linea, buffer = buffer.split(b"\n", 1)
     return linea.decode("utf-8"), buffer
+
+
+def enviar_linea(socket, mensaje):
+    """Envia un mensaje de texto terminado en un salto de linea."""
+    socket.sendall((mensaje + "\n").encode("utf-8"))
 
 
 def parse_msg(linea: str) -> tuple[str, list[str]]:

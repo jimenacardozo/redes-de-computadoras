@@ -1,5 +1,5 @@
 import socket, threading
-from comun import descubrir_servidor, recv_line, CLAVE, MSG_REGISTER, MSG_REG_RESP, MSG_GET_PROC, MSG_PROC, MSG_ALERT, MSG_METRIC
+from comun import descubrir_servidor, recv_line, enviar_linea, CLAVE, MSG_REGISTER, MSG_REG_RESP, MSG_GET_PROC, MSG_PROC, MSG_ALERT, MSG_METRIC
 import psutil
 import time
 
@@ -19,8 +19,8 @@ def obtener_procesos(cliente_tcp):
                 lista_procesos.append(f"{pid}:{name}")
                 
             lista_procesos_str = ', '.join(lista_procesos)
-            respuesta = f"{MSG_PROC} {lista_procesos_str}\n"
-            cliente_tcp.sendall(respuesta.encode('utf-8'))
+            respuesta = f"{MSG_PROC} {lista_procesos_str}"
+            enviar_linea(cliente_tcp, respuesta)
 
 #incluir try catch?? hay que tener la cadena completa
 ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
@@ -30,7 +30,7 @@ cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 cliente_tcp.connect((ip, tcp_port))
 
 buffer = b""  # acumula bytes hasta tener una linea completa
-cliente_tcp.sendall((f"{MSG_REGISTER} {CLAVE}\n").encode('utf-8'))
+enviar_linea(cliente_tcp, f"{MSG_REGISTER} {CLAVE}")
 respuesta, buffer = recv_line(cliente_tcp, buffer)
 if respuesta is None:
     print("No se recibió respuesta del servidor.")
@@ -47,20 +47,20 @@ if respuesta == MSG_REG_RESP:
         memoria = psutil.virtual_memory().percent
         
         print(f"Enviando métrica CPU: {cpu}%")
-        cliente_tcp.sendall((f"{MSG_METRIC} CPU {cpu}\n").encode('utf-8'))
+        enviar_linea(cliente_tcp, f"{MSG_METRIC} CPU {cpu}")
         print(f"Enviando métrica MEM: {memoria}%")
-        cliente_tcp.sendall((f"{MSG_METRIC} MEM {memoria}\n").encode('utf-8'))
+        enviar_linea(cliente_tcp, f"{MSG_METRIC} MEM {memoria}")
 
         if cpu > cpu_umbral or memoria > mem_umbral:
             print("Límite de métrica alcanzado")
 
         if cpu > cpu_umbral:
             print(f"Alerta: CPU {cpu}% supera el umbral de {cpu_umbral}%")
-            cliente_tcp.sendall((f"{MSG_ALERT} CPU {cpu}\n").encode('utf-8'))
+            enviar_linea(cliente_tcp, f"{MSG_ALERT} CPU {cpu}")
 
         if memoria > mem_umbral:
             print(f"Alerta: MEM {memoria}% supera el umbral de {mem_umbral}%")
-            cliente_tcp.sendall((f"{MSG_ALERT} MEM {memoria}\n").encode('utf-8'))
+            enviar_linea(cliente_tcp, f"{MSG_ALERT} MEM {memoria}")
 
         time.sleep(15)
 else:
