@@ -1,7 +1,9 @@
 import socket, threading
-from comun import descubrir_servidor, recv_line, enviar_linea, CLAVE, MSG_REGISTER, MSG_REG_RESP, MSG_GET_PROC, MSG_PROC, MSG_ALERT, MSG_METRIC
+from comun import descubrir_servidor, recv_line, enviar_linea, CLAVE, MSG_REGISTER, MSG_REG_RESP, MSG_GET_PROC, MSG_PROC, MSG_ALERT, MSG_METRIC, MSG_END
 import psutil
 import time
+
+termino_conexion = False
 
 #TODO: Esta raro que hacemos recv_line en el hilo y en el main, pero esta ok porque en el main lo hace solo una vez y es para registrar al cliente
 def obtener_procesos(cliente_tcp):
@@ -11,6 +13,7 @@ def obtener_procesos(cliente_tcp):
         if mensaje is None:
             print("No se recibió mensaje del servidor en el hilo de procesos.")
             return
+    
         if mensaje == MSG_GET_PROC:
             lista_procesos = []
             for proc in psutil.process_iter(['pid', 'name']):
@@ -22,9 +25,18 @@ def obtener_procesos(cliente_tcp):
             respuesta = f"{MSG_PROC} {lista_procesos_str}"
             enviar_linea(cliente_tcp, respuesta)
 
-#incluir try catch?? hay que tener la cadena completa
+def escuchar_consola(cliente_tcp):
+    global termino_conexion
+
+    while True:
+        comando = input("Ingrese un comando para enviar al servidor (o 'END' para termina r): ")
+        if comando == 'END':
+            enviar_linea(cliente_tcp, MSG_END)
+            termino_conexion = True
+            break
+
+#TODO: incluir try catch?? hay que tener la cadena completa
 ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
-#conexion tcp hacerla afuera
 
 cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 cliente_tcp.connect((ip, tcp_port))
@@ -39,10 +51,13 @@ if respuesta is None:
 
 #al final lo pusimos asi porque con esto ya validamos que este registrado el agente
 if respuesta == MSG_REG_RESP:
-    hilo = threading.Thread(target=obtener_procesos, args=(cliente_tcp))
-    hilo.start()
+    hilo_procesos = threading.Thread(target=obtener_procesos, args=(cliente_tcp,), daemon=True)
+    hilo_procesos.start()
+    
+    hilo_consola = threading.Thread(target=escuchar_consola, args=(cliente_tcp, ), daemon=True)
+    hilo_consola.start()
 
-    while True:
+    while not termino_conexion:
         cpu = psutil.cpu_percent()
         memoria = psutil.virtual_memory().percent
         
@@ -63,7 +78,6 @@ if respuesta == MSG_REG_RESP:
             enviar_linea(cliente_tcp, f"{MSG_ALERT} MEM {memoria}")
 
         time.sleep(15)
-else:
-    print("Respuesta inesperada del servidor:", respuesta)
 
-# TODO: CLOSE: cerrar el socket y el hilo de manera ordenada
+cliente_tcp.close()
+print("Conexión cerrada.")
