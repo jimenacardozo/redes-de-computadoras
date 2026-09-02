@@ -26,7 +26,7 @@ if respuesta == MSG_ADMIN_RESP:
         print(" P <x> -> Ver procesos del agente x (ej: P 2)")
         print(" Para salir, escriba 'END'")
         comando = input("Escriba un comando: ")
-        partes = comando.strip().split(" ")
+        partes = comando.strip().split()
         if not partes:
             print("Comando vacío")
 
@@ -35,7 +35,7 @@ if respuesta == MSG_ADMIN_RESP:
             respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
             if respuesta is None:
                 print("No se recibió respuesta del servidor.")
-                #TODO: cerrar el socket y el hilo de manera ordenada??
+                break
 
             comando, argumentos = parse_msg(respuesta)
             ids_agentes = argumentos[1:]  # Ignorar el primer elemento que es el comando
@@ -68,7 +68,7 @@ if respuesta == MSG_ADMIN_RESP:
                 respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
                 if respuesta is None:
                     print("No se recibió respuesta del servidor.")
-                    #TODO: cerrar el socket y el hilo de manera ordenada??
+                    break
                     
                 print(respuesta.strip())
 
@@ -92,8 +92,8 @@ if respuesta == MSG_ADMIN_RESP:
             respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
             if respuesta is None:
                 print("No se recibió respuesta del servidor.")
-                #TODO: cerrar el socket y el hilo de manera ordenada??
-                
+                break
+
             print(respuesta.strip())
 
         elif partes[0] == MSG_END:
@@ -105,4 +105,5 @@ if respuesta == MSG_ADMIN_RESP:
         else:
             print("Comando inválido.")
 
-    # TODO: CLOSE: cerrar el socket y el hilo de manera ordenada
+cliente_tcp.close()
+print("Conexión cerrada.")

@@ -4,6 +4,11 @@ import psutil
 import time
 
 termino_conexion = False
+lock_envio = threading.Lock() # evita que dos hilos escriban al mismo tiempo sobre cliente_tcp
+
+def enviar_linea_segura(cliente_tcp, mensaje):
+    with lock_envio:
+        enviar_linea(cliente_tcp, mensaje)
 
 #TODO: Esta raro que hacemos recv_line en el hilo y en el main, pero esta ok porque en el main lo hace solo una vez y es para registrar al cliente
 def obtener_procesos(cliente_tcp):
@@ -23,7 +28,7 @@ def obtener_procesos(cliente_tcp):
                 
             lista_procesos_str = ', '.join(lista_procesos)
             respuesta = f"{MSG_PROC} {lista_procesos_str}"
-            enviar_linea(cliente_tcp, respuesta)
+            enviar_linea_segura(cliente_tcp, respuesta)
 
 def escuchar_consola(cliente_tcp):
     global termino_conexion
@@ -31,7 +36,7 @@ def escuchar_consola(cliente_tcp):
     while True:
         comando = input("Ingrese un comando para enviar al servidor (o 'END' para termina r): ")
         if comando == 'END':
-            enviar_linea(cliente_tcp, MSG_END)
+            enviar_linea_segura(cliente_tcp, MSG_END)
             termino_conexion = True
             break
 
@@ -62,20 +67,20 @@ if respuesta == MSG_REG_RESP:
         memoria = psutil.virtual_memory().percent
         
         print(f"Enviando métrica CPU: {cpu}%")
-        enviar_linea(cliente_tcp, f"{MSG_METRIC} CPU {cpu}")
+        enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} CPU {cpu}")
         print(f"Enviando métrica MEM: {memoria}%")
-        enviar_linea(cliente_tcp, f"{MSG_METRIC} MEM {memoria}")
+        enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} MEM {memoria}")
 
         if cpu > cpu_umbral or memoria > mem_umbral:
             print("Límite de métrica alcanzado")
 
         if cpu > cpu_umbral:
             print(f"Alerta: CPU {cpu}% supera el umbral de {cpu_umbral}%")
-            enviar_linea(cliente_tcp, f"{MSG_ALERT} CPU {cpu}")
+            enviar_linea_segura(cliente_tcp, f"{MSG_ALERT} CPU {cpu}")
 
         if memoria > mem_umbral:
             print(f"Alerta: MEM {memoria}% supera el umbral de {mem_umbral}%")
-            enviar_linea(cliente_tcp, f"{MSG_ALERT} MEM {memoria}")
+            enviar_linea_segura(cliente_tcp, f"{MSG_ALERT} MEM {memoria}")
 
         time.sleep(15)
 

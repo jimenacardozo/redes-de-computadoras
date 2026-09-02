@@ -28,7 +28,7 @@ COMANDOS_ADMIN = {MSG_LIST_AGENTS, MSG_GET_PROC, MSG_GET_METRIC, MSG_END}
 agentes = {}
 siguiente_id = 1
 lock = threading.Lock()
-bitacora = open("log.txt", "w") #con w crea el archivo si no existe y lo vacia si ya existe. 
+lock_bitacora = threading.Lock() # protege las escrituras al log, separado del lock de agentes
 
 def manejar_conexion_udp():
     servidor_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # AF_INET -> IPv4, SOCK_DGRAM -> UDP
@@ -68,6 +68,7 @@ def registrar_agente_comun(conn, addr, argumentos):
             "mem": deque(maxlen=10),
             "procesos": None,
             "proc_event": None,
+            "proc_lock": threading.Lock(), # serializa los pedidos GET_PROC hacia este agente
         }
 
     enviar_linea(conn, MSG_REG_RESP)
@@ -149,7 +150,9 @@ def manejar_mensaje_comun(conn, id_agente, comando, argumentos):
             f"{MSG_ALERT} - {datetime.now()}: agente {id_agente} supera "
             f"el umbral de {nombre_metrica} con {valor}"
         )
-        bitacora.write(f"{mensaje_alerta}\n")
+        with lock_bitacora:
+            with open("log.txt", "a") as bitacora: # Lo abre al archivo justo antes de escribir, y se cierra automáticamente al salir del bloque with
+                bitacora.write(f"{mensaje_alerta}\n")
         print(mensaje_alerta)
 
 
@@ -179,24 +182,24 @@ def manejar_mensaje_admin(conn, comando, argumentos):
 
         with lock:
             agente = agentes.get(id_solicitado)
-            if agente is not None:
-                evento = threading.Event()
-                agente["proc_event"] = evento
-                agente["procesos"] = None
-                socket_agente = agente["conn"]
 
         if agente is None:
             enviar_linea(conn, MSG_ERROR)
             return
 
-        enviar_linea(socket_agente, MSG_GET_PROC)
+        with agente["proc_lock"]: # Bloquea el acceso a GET_PROC para este agente mientras se procesa la solicitud
+            evento = threading.Event()
+            agente["proc_event"] = evento
+            socket_agente = agente["conn"]
 
-        if not evento.wait(timeout=5):
-            enviar_linea(conn, MSG_ERROR)
-            return
+            enviar_linea(socket_agente, MSG_GET_PROC)
 
-        with lock:
-            resultado = agente["procesos"]
+            if not evento.wait(timeout=5):
+                enviar_linea(conn, MSG_ERROR)
+                return
+
+            # Cuando llega aca se hizo event.set() en el hilo de cliente comun (PROC), y ya se guardo el resultado en agente["procesos"]
+            resultado = agente["procesos"] 
 
         enviar_linea(conn, f"{MSG_PROC} {id_solicitado} {resultado}")
 
@@ -318,6 +321,5 @@ print("Servidor TCP iniciado")
 try:
     hilo_udp.join() #Espera a que el hilo UDP termine
     hilo_tcp.join() #Espera a que el hilo TCP termine
-except KeyboardInterrupt: 
-    bitacora.close() #Cierra el archivo de bitacora  
+except KeyboardInterrupt:
     print("Servidor detenido por el usuario")

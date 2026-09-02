@@ -28,7 +28,7 @@ MSG_GET_METRIC = "GET_METRIC"
 MSG_MEASUREMENTS = "MEASUREMENTS"
 
 # Comunes a ambos
-MSG_ERROR = "ERROR" # TODO: no se usa en ningun archivo, revisar
+MSG_ERROR = "ERROR"
 MSG_END = "END"
 
 # Clave secreta
