@@ -192,7 +192,9 @@ def manejar_mensaje_admin(conn, comando, argumentos):
             agente["proc_event"] = evento
             socket_agente = agente["conn"]
 
-            enviar_linea(socket_agente, MSG_GET_PROC)
+            if not enviar_linea(socket_agente, MSG_GET_PROC):
+                enviar_linea(conn, MSG_ERROR)
+                return
 
             if not evento.wait(timeout=5):
                 enviar_linea(conn, MSG_ERROR)

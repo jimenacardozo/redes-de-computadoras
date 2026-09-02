@@ -6,9 +6,9 @@ import time
 termino_conexion = False
 lock_envio = threading.Lock() # evita que dos hilos escriban al mismo tiempo sobre cliente_tcp
 
-def enviar_linea_segura(cliente_tcp, mensaje):
+def enviar_linea_segura(cliente_tcp, mensaje) -> bool:
     with lock_envio:
-        enviar_linea(cliente_tcp, mensaje)
+        return enviar_linea(cliente_tcp, mensaje)
 
 #TODO: Esta raro que hacemos recv_line en el hilo y en el main, pero esta ok porque en el main lo hace solo una vez y es para registrar al cliente
 def obtener_procesos(cliente_tcp):
@@ -28,7 +28,9 @@ def obtener_procesos(cliente_tcp):
                 
             lista_procesos_str = ', '.join(lista_procesos)
             respuesta = f"{MSG_PROC} {lista_procesos_str}"
-            enviar_linea_segura(cliente_tcp, respuesta)
+            if not enviar_linea_segura(cliente_tcp, respuesta):
+                print("No se pudo enviar la respuesta de procesos, conexión perdida.")
+                return
 
 def escuchar_consola(cliente_tcp):
     global termino_conexion
@@ -47,7 +49,11 @@ cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 cliente_tcp.connect((ip, tcp_port))
 
 buffer = b""  # acumula bytes hasta tener una linea completa
-enviar_linea(cliente_tcp, f"{MSG_REGISTER} {CLAVE}")
+if not enviar_linea(cliente_tcp, f"{MSG_REGISTER} {CLAVE}"):
+    print("No se pudo enviar el registro al servidor.")
+    cliente_tcp.close()
+    exit(1)
+
 respuesta, buffer = recv_line(cliente_tcp, buffer)
 if respuesta is None:
     print("No se recibió respuesta del servidor.")
@@ -65,11 +71,16 @@ if respuesta == MSG_REG_RESP:
     while not termino_conexion:
         cpu = psutil.cpu_percent()
         memoria = psutil.virtual_memory().percent
-        
+
         print(f"Enviando métrica CPU: {cpu}%")
-        enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} CPU {cpu}")
+        if not enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} CPU {cpu}"):
+            print("Se perdió la conexión con el servidor.")
+            break
+        
         print(f"Enviando métrica MEM: {memoria}%")
-        enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} MEM {memoria}")
+        if not enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} MEM {memoria}"):
+            print("Se perdió la conexión con el servidor.")
+            break
 
         if cpu > cpu_umbral or memoria > mem_umbral:
             print("Límite de métrica alcanzado")

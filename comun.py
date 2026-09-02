@@ -37,7 +37,11 @@ CLAVE = "redes2026grupo21"
 
 def recv_line(socket, buffer) -> tuple[str | None, bytes]:
     while b"\n" not in buffer:
-        datos = socket.recv(TCP_RECV_BUFSIZE)
+        try:
+            datos = socket.recv(TCP_RECV_BUFSIZE)
+        except OSError:
+            # Timeout, conexion reseteada, etc.: se trata igual que un cierre normal
+            return None, None
         if not datos:
             # El otro extremo cerró la conexión
             return None, None
@@ -46,9 +50,14 @@ def recv_line(socket, buffer) -> tuple[str | None, bytes]:
     return linea.decode("utf-8"), buffer
 
 
-def enviar_linea(socket, mensaje):
-    """Envia un mensaje de texto terminado en un salto de linea."""
-    socket.sendall((mensaje + "\n").encode("utf-8"))
+def enviar_linea(socket, mensaje) -> bool:
+    """Envia un mensaje de texto terminado en un salto de linea.
+    Devuelve True si se pudo enviar, False si el socket ya no esta disponible."""
+    try:
+        socket.sendall((mensaje + "\n").encode("utf-8"))
+        return True
+    except OSError:
+        return False
 
 
 def parse_msg(linea: str) -> tuple[str, list[str]]:

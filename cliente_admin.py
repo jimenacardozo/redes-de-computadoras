@@ -7,7 +7,10 @@ cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 cliente_tcp.connect((ip, tcp_port))
 
 buffer = b""  # acumula bytes hasta tener una linea completa
-enviar_linea(cliente_tcp, f"{MSG_ADMIN} {CLAVE}")
+if not enviar_linea(cliente_tcp, f"{MSG_ADMIN} {CLAVE}"):
+    print("No se pudo enviar el registro al servidor.")
+    cliente_tcp.close()
+    exit(1)
 
 respuesta, buffer = recv_line(cliente_tcp, buffer)
 if respuesta is None:
@@ -31,7 +34,9 @@ if respuesta == MSG_ADMIN_RESP:
             print("Comando vacío")
 
         elif partes[0] == "L":
-            enviar_linea(cliente_tcp, MSG_LIST_AGENTS)
+            if not enviar_linea(cliente_tcp, MSG_LIST_AGENTS):
+                print("Se perdió la conexión con el servidor.")
+                break
             respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
             if respuesta is None:
                 print("No se recibió respuesta del servidor.")
@@ -64,7 +69,9 @@ if respuesta == MSG_ADMIN_RESP:
             if tipo_metrica not in ["CPU", "MEM"]:
                 print("Tipo de métrica inválido. Use CPU o MEM.")
             else:
-                enviar_linea(cliente_tcp, f"{MSG_GET_METRIC} {agente_id} {tipo_metrica}")
+                if not enviar_linea(cliente_tcp, f"{MSG_GET_METRIC} {agente_id} {tipo_metrica}"):
+                    print("Se perdió la conexión con el servidor.")
+                    break
                 respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
                 if respuesta is None:
                     print("No se recibió respuesta del servidor.")
@@ -88,7 +95,9 @@ if respuesta == MSG_ADMIN_RESP:
                 continue
 
             agente_id = ids_agentes[ordinal - 1]  # Convertir a índice
-            enviar_linea(cliente_tcp, f"{MSG_GET_PROC} {agente_id}")
+            if not enviar_linea(cliente_tcp, f"{MSG_GET_PROC} {agente_id}"):
+                print("Se perdió la conexión con el servidor.")
+                break
             respuesta, buffer_comando = recv_line(cliente_tcp, buffer_comando)
             if respuesta is None:
                 print("No se recibió respuesta del servidor.")
