@@ -10,13 +10,12 @@ def enviar_linea_segura(cliente_tcp, mensaje) -> bool:
     with lock_envio:
         return enviar_linea(cliente_tcp, mensaje)
 
-#TODO: Esta raro que hacemos recv_line en el hilo y en el main, pero esta ok porque en el main lo hace solo una vez y es para registrar al cliente
 def obtener_procesos(cliente_tcp):
     buffer_hilo = b""  # acumula bytes hasta tener una linea completa
     while True:
         mensaje, buffer_hilo = recv_line(cliente_tcp, buffer_hilo)
         if mensaje is None:
-            print("No se recibió mensaje del servidor en el hilo de procesos.")
+            print("Conexión cerrada, dejando de escuchar procesos.")
             return
     
         if mensaje == MSG_GET_PROC:
@@ -36,14 +35,17 @@ def escuchar_consola(cliente_tcp):
     global termino_conexion
 
     while True:
-        comando = input("Ingrese un comando para enviar al servidor (o 'END' para termina r): ")
+        comando = input("Ingrese comando 'END' para terminar: \n\n")
         if comando == 'END':
             enviar_linea_segura(cliente_tcp, MSG_END)
             termino_conexion = True
             break
 
-#TODO: incluir try catch?? hay que tener la cadena completa
-ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
+try:
+    ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
+except Exception as e:
+    print(f"Error al descubrir el servidor: {e}")
+    exit(1)
 
 cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 cliente_tcp.connect((ip, tcp_port))
@@ -60,7 +62,6 @@ if respuesta is None:
     cliente_tcp.close()
     exit(1)
 
-#al final lo pusimos asi porque con esto ya validamos que este registrado el agente
 if respuesta == MSG_REG_RESP:
     hilo_procesos = threading.Thread(target=obtener_procesos, args=(cliente_tcp,), daemon=True)
     hilo_procesos.start()

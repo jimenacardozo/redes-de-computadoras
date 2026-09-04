@@ -1,7 +1,11 @@
 import socket
 from comun import descubrir_servidor, recv_line, enviar_linea, parse_msg, CLAVE, MSG_GET_METRIC, MSG_GET_PROC, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS, MSG_END
 
-ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
+try: 
+    ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
+except Exception as e: 
+    print(f"Error al descubrir el servidor: {e}")
+    exit(1)
 
 cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 cliente_tcp.connect((ip, tcp_port))
@@ -22,12 +26,13 @@ if respuesta == MSG_ADMIN_RESP:
     ids_agentes = []
     buffer_comando = b""
 
+    print("Comandos disponibles:")
+    print(" L -> Listar agentes conectados")
+    print(" M <x> <CPU|MEM> -> Ver métrica del agente x (ej: M 1 CPU)")
+    print(" P <x> -> Ver procesos del agente x (ej: P 2)")
+    print(" Para salir, escriba 'END' \n\n")
+
     while True:
-        print("Comandos disponibles:")
-        print(" L -> Listar agentes conectados")
-        print(" M <x> <CPU|MEM> -> Ver métrica del agente x (ej: M 1 CPU)")
-        print(" P <x> -> Ver procesos del agente x (ej: P 2)")
-        print(" Para salir, escriba 'END'")
         comando = input("Escriba un comando: ")
         partes = comando.strip().split()
         if not partes:
@@ -78,6 +83,7 @@ if respuesta == MSG_ADMIN_RESP:
                     break
                     
                 print(respuesta.strip())
+                print("\n")
 
         elif partes[0] == "P" and len(partes) == 2:
             if not ids_agentes:
@@ -104,11 +110,11 @@ if respuesta == MSG_ADMIN_RESP:
                 break
 
             print(respuesta.strip())
+            print("\n")
 
         elif partes[0] == MSG_END:
             enviar_linea(cliente_tcp, f"{MSG_END}")
             cliente_tcp.close()
-            print("Conexión cerrada.")
             break
             
         else:
