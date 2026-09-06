@@ -1,5 +1,5 @@
 import socket
-from comun import descubrir_servidor, recv_line, enviar_linea, parse_msg, CLAVE, MSG_GET_METRIC, MSG_GET_PROC, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS, MSG_END
+from comun import descubrir_servidor, recv_line, enviar_linea, parse_msg, CLAVE, TCP_TIMEOUT, MSG_GET_METRIC, MSG_GET_PROC, MSG_ADMIN, MSG_ADMIN_RESP, MSG_LIST_AGENTS, MSG_END
 
 try: 
     ip, cpu_umbral, mem_umbral, tcp_port = descubrir_servidor()
@@ -8,7 +8,13 @@ except Exception as e:
     exit(1)
 
 cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-cliente_tcp.connect((ip, tcp_port))
+cliente_tcp.settimeout(TCP_TIMEOUT)
+try:
+    cliente_tcp.connect((ip, tcp_port))
+except OSError as e:
+    print(f"Error al conectar por TCP con el servidor: {e}")
+    cliente_tcp.close()
+    exit(1)
 
 buffer = b""  # acumula bytes hasta tener una linea completa
 if not enviar_linea(cliente_tcp, f"{MSG_ADMIN} {CLAVE}"):

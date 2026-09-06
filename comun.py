@@ -6,6 +6,7 @@ UDP_PORT = 6021 # usado por descubrir_servidor() aca abajo y por servidor.py
 DISCOVERY_TIMEOUT = 3 # segundos que se espera respuesta SERVER
 DISCOVERY_RETRIES = 3
 TCP_RECV_BUFSIZE = 4096
+TCP_TIMEOUT = 10 # segundos para operaciones TCP que esperan respuesta
 
 # UDP
 MSG_DISCOVER = "DISCOVER"

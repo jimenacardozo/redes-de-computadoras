@@ -1,5 +1,5 @@
 import socket, threading
-from comun import descubrir_servidor, recv_line, enviar_linea, CLAVE, MSG_REGISTER, MSG_REG_RESP, MSG_GET_PROC, MSG_PROC, MSG_ALERT, MSG_METRIC, MSG_END
+from comun import descubrir_servidor, recv_line, enviar_linea, CLAVE, TCP_TIMEOUT, MSG_REGISTER, MSG_REG_RESP, MSG_GET_PROC, MSG_PROC, MSG_ALERT, MSG_METRIC, MSG_END
 import psutil
 import time
 
@@ -48,7 +48,13 @@ except Exception as e:
     exit(1)
 
 cliente_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-cliente_tcp.connect((ip, tcp_port))
+cliente_tcp.settimeout(TCP_TIMEOUT)
+try:
+    cliente_tcp.connect((ip, tcp_port))
+except OSError as e:
+    print(f"Error al conectar por TCP con el servidor: {e}")
+    cliente_tcp.close()
+    exit(1)
 
 buffer = b""  # acumula bytes hasta tener una linea completa
 if not enviar_linea(cliente_tcp, f"{MSG_REGISTER} {CLAVE}"):
@@ -63,6 +69,8 @@ if respuesta is None:
     exit(1)
 
 if respuesta == MSG_REG_RESP:
+    cliente_tcp.settimeout(None)
+
     hilo_procesos = threading.Thread(target=obtener_procesos, args=(cliente_tcp,), daemon=True)
     hilo_procesos.start()
     
