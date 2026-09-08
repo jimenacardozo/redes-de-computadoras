@@ -16,6 +16,8 @@ TCP_PORT = 1234 # definir bien
 
 UMBRAL_CPU = 100
 UMBRAL_MEM = 100
+TCP_REGISTRO_TIMEOUT = 10
+AGENTE_COMUN_TIMEOUT = 45
 
 ROL_SIN_REGISTRAR = "SIN_REGISTRAR"
 ROL_COMUN = "COMUN"
@@ -245,6 +247,7 @@ def conexion_tcp(conn, addr):
     id_agente = None
     rol = ROL_SIN_REGISTRAR
     buffer = b""  # acumula bytes hasta tener una linea completa
+    conn.settimeout(TCP_REGISTRO_TIMEOUT)
 
     try:
         while True:
@@ -263,9 +266,11 @@ def conexion_tcp(conn, addr):
                     if nuevo_id is not None:
                         id_agente = nuevo_id
                         rol = ROL_COMUN
+                        conn.settimeout(AGENTE_COMUN_TIMEOUT)
                 elif comando == MSG_ADMIN:
                     if registrar_admin(conn, addr, argumentos):
                         rol = ROL_ADMIN
+                        conn.settimeout(None)
                 else:
                     enviar_linea(conn, MSG_ERROR)
                 continue
