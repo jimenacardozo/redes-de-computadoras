@@ -1,10 +1,11 @@
 import socket, threading
 from comun import descubrir_servidor, recv_line, enviar_linea, CLAVE, TCP_TIMEOUT, MSG_REGISTER, MSG_REG_RESP, MSG_GET_PROC, MSG_PROC, MSG_ALERT, MSG_METRIC, MSG_END
 import psutil
-import time
 
 termino_conexion = False
 lock_envio = threading.Lock() # evita que dos hilos escriban al mismo tiempo sobre cliente_tcp
+
+DELTA_ALERTA = 5  # puntos porcentuales: reenviar la alerta si el valor se movió al menos esto desde la ultima alertada
 
 def enviar_linea_segura(cliente_tcp, mensaje) -> bool:
     with lock_envio:
@@ -77,32 +78,58 @@ if respuesta == MSG_REG_RESP:
     hilo_consola = threading.Thread(target=escuchar_consola, args=(cliente_tcp, ), daemon=True)
     hilo_consola.start()
 
+    contador = 15  # Lo iniciamos en 15 para que el primer reporte de métricas se haga inmediatamente al iniciar el cliente.
+    en_alerta_cpu = False
+    en_alerta_mem = False
+    ultimo_valor_alertado_cpu = None  # valor de CPU de la ultima alerta mandada, para detectar cambios significativos
+    ultimo_valor_alertado_mem = None
+
     while not termino_conexion:
-        cpu = psutil.cpu_percent()
+        # cpu_percent(interval=1) bloquea ~1s y mide el uso durante ese intervalo
+        cpu = psutil.cpu_percent(interval=1)
         memoria = psutil.virtual_memory().percent
 
-        print(f"Enviando métrica CPU: {cpu}%")
-        if not enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} CPU {cpu}"):
-            print("Se perdió la conexión con el servidor.")
-            break
-        
-        print(f"Enviando métrica MEM: {memoria}%")
-        if not enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} MEM {memoria}"):
-            print("Se perdió la conexión con el servidor.")
-            break
-
-        if cpu > cpu_umbral or memoria > mem_umbral:
-            print("Límite de métrica alcanzado")
-
+        # Chequeo de alertas: se hace en cada vuelta (~1s) para detectar la condición lo antes posible
+        # Se manda una alerta nueva al cruzar el umbral, y se vuelve a mandar si el valor se aleja al menos DELTA_ALERTA puntos del ultimo valor alertado,
+        # para no perder de vista que la condicion empeoro (o mejoro) sin spamear por el ruido normal de la medicion.
         if cpu > cpu_umbral:
-            print(f"Alerta: CPU {cpu}% supera el umbral de {cpu_umbral}%")
-            enviar_linea_segura(cliente_tcp, f"{MSG_ALERT} CPU {cpu}")
+            if not en_alerta_cpu or abs(cpu - ultimo_valor_alertado_cpu) >= DELTA_ALERTA:
+                print(f"Alerta: CPU {cpu}% supera el umbral de {cpu_umbral}%")
+                if not enviar_linea_segura(cliente_tcp, f"{MSG_ALERT} CPU {cpu}"):
+                    print("Se perdió la conexión con el servidor.")
+                    break
+                en_alerta_cpu = True
+                ultimo_valor_alertado_cpu = cpu
+        else:
+            en_alerta_cpu = False
+            ultimo_valor_alertado_cpu = None
 
         if memoria > mem_umbral:
-            print(f"Alerta: MEM {memoria}% supera el umbral de {mem_umbral}%")
-            enviar_linea_segura(cliente_tcp, f"{MSG_ALERT} MEM {memoria}")
+            if not en_alerta_mem or abs(memoria - ultimo_valor_alertado_mem) >= DELTA_ALERTA:
+                print(f"Alerta: MEM {memoria}% supera el umbral de {mem_umbral}%")
+                if not enviar_linea_segura(cliente_tcp, f"{MSG_ALERT} MEM {memoria}"):
+                    print("Se perdió la conexión con el servidor.")
+                    break
+                en_alerta_mem = True
+                ultimo_valor_alertado_mem = memoria
+        else:
+            en_alerta_mem = False
+            ultimo_valor_alertado_mem = None
 
-        time.sleep(15)
+        # Reporte de métricas: solo cada 15 vueltas (~15s)
+        contador += 1
+        if contador >= 15:
+            print(f"Enviando métrica CPU: {cpu}%")
+            if not enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} CPU {cpu}"):
+                print("Se perdió la conexión con el servidor.")
+                break
+
+            print(f"Enviando métrica MEM: {memoria}%")
+            if not enviar_linea_segura(cliente_tcp, f"{MSG_METRIC} MEM {memoria}"):
+                print("Se perdió la conexión con el servidor.")
+                break
+
+            contador = 0
 
 cliente_tcp.close()
 print("Conexión cerrada.")
